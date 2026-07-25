@@ -32,11 +32,10 @@ CONTENT_WIDTH_DXA = 9360
 TABLE_INDENT_DXA = 120
 CELL_MARGINS = {"top": 80, "bottom": 80, "start": 120, "end": 120}
 
-BODY_FONT = "Calibri"
-# Headless LibreOffice reliably embeds/renders Arial Unicode MS. For mixed
-# Traditional Chinese runs we set every OOXML font slot to this face, because
-# the renderer does not consistently honor only the w:eastAsia slot.
-EAST_ASIA_FONT = "Arial Unicode MS"
+# Named typography override requested for the editable DOCX. Word selects
+# these by script: Aptos for Latin text and PingFang TC for Traditional Chinese.
+BODY_FONT = "Aptos"
+EAST_ASIA_FONT = "PingFang TC"
 INK = "263238"
 MUTED = "5E6E79"
 HEADING_BLUE = "2E74B5"
@@ -61,17 +60,13 @@ def set_run_font(
     bold: bool | None = None,
     italic: bool | None = None,
 ):
-    has_cjk = any(
-        "\u3400" <= char <= "\u9fff" or "\uf900" <= char <= "\ufaff"
-        for char in (run.text or "")
-    )
-    resolved_name = east_asia if has_cjk else name
-    run.font.name = resolved_name
+    run.font.name = name
     rpr = run._element.get_or_add_rPr()
     rfonts = rpr.get_or_add_rFonts()
-    rfonts.set(qn("w:ascii"), resolved_name)
-    rfonts.set(qn("w:hAnsi"), resolved_name)
+    rfonts.set(qn("w:ascii"), name)
+    rfonts.set(qn("w:hAnsi"), name)
     rfonts.set(qn("w:eastAsia"), east_asia)
+    rfonts.set(qn("w:cs"), name)
     if size is not None:
         run.font.size = Pt(size)
     if color is not None:
@@ -383,12 +378,12 @@ def configure_styles(doc: Document):
     }
     for style_name, (size, color, before, after) in heading_tokens.items():
         style = styles[style_name]
-        style.font.name = EAST_ASIA_FONT
+        style.font.name = BODY_FONT
         style.font.size = Pt(size)
         style.font.bold = True
         style.font.color.rgb = RGBColor.from_string(color)
-        style._element.rPr.rFonts.set(qn("w:ascii"), EAST_ASIA_FONT)
-        style._element.rPr.rFonts.set(qn("w:hAnsi"), EAST_ASIA_FONT)
+        style._element.rPr.rFonts.set(qn("w:ascii"), BODY_FONT)
+        style._element.rPr.rFonts.set(qn("w:hAnsi"), BODY_FONT)
         style._element.rPr.rFonts.set(qn("w:eastAsia"), EAST_ASIA_FONT)
         style.paragraph_format.space_before = Pt(before)
         style.paragraph_format.space_after = Pt(after)
@@ -646,6 +641,9 @@ def build_document() -> Document:
     for lead, body in tool_groups:
         add_body(doc, lead + body, bold_lead=lead)
 
+    # Keep the safety matrix together after the font override; fallback
+    # renderers otherwise strand its header row at the foot of the prior page.
+    add_page_break(doc)
     doc.add_heading("具體防護", level=2)
     security_rows = [
         ("存取控制", "平台 user/chat allowlist 若有設定就優先使用；否則回退全域清單。user 與 chat 兩項同時設定時必須同時符合；全部未設時預設允許。"),
@@ -708,6 +706,9 @@ def build_document() -> Document:
         add_bullet(doc, text, bullet_num_id)
 
     # 5. Configuration and operation.
+    # Begin the configuration block on a fresh page so the environment matrix
+    # stays intact across Aptos/PingFang and metric-compatible fallbacks.
+    add_page_break(doc)
     doc.add_heading("5. 設定、開發與運行", level=1)
     doc.add_heading("必要與選用環境變數", level=2)
     env_rows = [
