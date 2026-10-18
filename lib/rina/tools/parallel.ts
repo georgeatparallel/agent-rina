@@ -14,7 +14,8 @@ const sourcesSchema = z.object({
   results: z.array(z.object({
     url: z.string().url(),
     title: z.string().nullish(),
-  })),
+  })).optional(),
+  errors: z.array(z.unknown()).optional(),
 });
 
 async function callParallel(
@@ -53,10 +54,14 @@ async function callParallel(
     // Search/fetch return JSON text today. Keep text output compatible if the
     // server changes its presentation, but expose structured citations when present.
     let citations;
+    let hasEvidence = true;
     try {
       const sources = sourcesSchema.safeParse(JSON.parse(text));
       if (sources.success) {
-        citations = sources.data.results.map(({ url, title }) => ({ url, title: title ?? undefined }));
+        const { results, errors } = sources.data;
+        citations = results?.map(({ url, title }) => ({ url, title: title ?? undefined }));
+        if (results !== undefined) hasEvidence = results.length > 0;
+        else if (errors?.length) hasEvidence = false;
       }
     } catch {
       // Plain-text results still carry their source URLs in the excerpts.
@@ -65,7 +70,7 @@ async function callParallel(
     // Preserve the server's excerpts and source URLs for the outer agent to
     // synthesize. There is no second model call and no unsourced fallback.
     return toolResult({
-      ok: !result.isError && text.trim().length > 0,
+      ok: !result.isError && hasEvidence && text.trim().length > 0,
       summary: text || "Parallel Search MCP returned no text.",
       citations,
       metrics: { elapsedMs: Date.now() - started },

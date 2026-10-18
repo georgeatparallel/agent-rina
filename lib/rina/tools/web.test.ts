@@ -174,6 +174,20 @@ test("JSON source URLs reach the normal Rina citation consumer", async (t) => {
   assert.match(toolResultToModelText(result), /Sources:\n- Artemis II: https:/);
 });
 
+test("empty and error-only JSON payloads fail without discarding error details", async (t) => {
+  anonymous(t);
+  const error = { url: "https://8.8.8.8/", error_type: "fetch_error", content: "The page could not be fetched" };
+  const replies = [{ results: [], errors: [error] }, { results: [] }, { errors: [error] }];
+  const requests = mcpServer(t, () => ({ content: [{ type: "text", text: JSON.stringify(replies.shift()) }] }));
+  for (let index = 0; index < 3; index += 1) {
+    const result = await execute("fetchWebpage", { url: "https://8.8.8.8/" });
+    assert.equal(result.ok, false);
+    if (index !== 1) assert.match(toolResultToModelText(result), /The page could not be fetched/);
+  }
+  assert.equal(requests.filter((r) => r.rpc.method === "tools/call").length, 3);
+  assert.ok(requests.every((r) => r.url === "https://search.parallel.ai/mcp"));
+});
+
 test("chat allowlists deny access before any search or agent execution", async (t) => {
   anonymous(t);
   const requests = mcpServer(t);
